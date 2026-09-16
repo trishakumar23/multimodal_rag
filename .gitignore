@@ -1,0 +1,41 @@
+# Python environment and build output
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+
+# Source documents and generated application data
+*.pdf
+artifacts/
+data/
+storage/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Local inspection work; not needed to run the application
+local/
+
+# Editor, operating system, and local agent files
+.DS_Store
+.idea/
+.vscode/
+.agents/
+.codex/
