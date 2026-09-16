@@ -26,7 +26,7 @@ def test_upload_runs_full_pipeline_and_persists(tmp_path, monkeypatch):
     calls = []
     temporary_source = []
 
-    def fake_extract(source, year, output):
+    def fake_extract(source, year, output, **kwargs):
         calls.append("extract")
         temporary_source.append(source)
         assert source.name == "report_2025.pdf"
@@ -116,7 +116,7 @@ def test_ingestion_failure_returns_safe_error_without_database_rows(tmp_path, mo
     settings = Settings(database_url=f"sqlite:///{database}", _env_file=None)
     source_path = []
 
-    def fail_extraction(source, year, output):
+    def fail_extraction(source, year, output, **kwargs):
         source_path.append(source)
         raise RuntimeError("sensitive internal failure")
 

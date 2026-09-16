@@ -4,6 +4,7 @@ import json
 import logging
 import shutil
 import tempfile
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,6 +23,7 @@ from app.database import (
     persist_document,
 )
 from app.extraction import extract_pdf
+from app.images import associate_images
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         filename = Path((file.filename or "").replace("\\", "/")).name
         if not filename or Path(filename).suffix.lower() != ".pdf":
             raise HTTPException(status_code=400, detail="Upload a PDF file with a .pdf filename")
+        image_dir = settings.image_dir / uuid.uuid4().hex
+        committed = False
         try:
             if file.file.read(5) != b"%PDF-":
                 raise HTTPException(status_code=400, detail="The uploaded file is not a PDF")
@@ -80,13 +84,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 source = workdir / filename
                 with source.open("wb") as destination:
                     shutil.copyfileobj(file.file, destination)
-                extraction_dir = extract_pdf(source, year, workdir / "extraction")
+                extraction_dir = extract_pdf(
+                    source,
+                    year,
+                    workdir / "extraction",
+                    min_image_area_ratio=settings.min_image_area_ratio,
+                )
                 chunks_path = workdir / "chunks.json"
                 chunk_extraction(extraction_dir, chunks_path)
                 manifest_path = extraction_dir / "manifest.json"
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if manifest.get("saved_picture_count", 0):
+                    multimodal_path = workdir / "multimodal.json"
+                    associate_images(
+                        extraction_dir,
+                        chunks_path,
+                        multimodal_path,
+                        image_dir,
+                        min_area_ratio=settings.min_image_area_ratio,
+                    )
+                    chunks_path = multimodal_path
                 chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
                 document = persist_document(application.state.sessions, manifest, chunks)
+                committed = True
                 return DocumentResponse(
                     document_id=document.id,
                     filename=document.filename,
@@ -101,6 +121,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=500, detail="Document ingestion failed") from exc
         finally:
             file.file.close()
+            if not committed and image_dir.exists():
+                shutil.rmtree(image_dir)
 
     return application
 

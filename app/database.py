@@ -49,6 +49,25 @@ class Chunk(Base):
     labels: Mapped[list[str] | None] = mapped_column(JSON)
 
     document: Mapped[Document] = relationship(back_populates="chunks")
+    images: Mapped[list["Image"]] = relationship(
+        back_populates="chunk", cascade="all, delete-orphan"
+    )
+
+
+class Image(Base):
+    __tablename__ = "images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("chunks.id", ondelete="CASCADE"), nullable=False
+    )
+    image_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    path: Mapped[str] = mapped_column(String, nullable=False)
+    caption: Mapped[str | None] = mapped_column(Text)
+    bbox: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    chunk: Mapped[Chunk] = relationship(back_populates="images")
 
 
 def create_database_engine(settings: Settings | None = None) -> Engine:
@@ -92,17 +111,26 @@ def persist_document(
     )
     for index, item in enumerate(chunk_output["chunks"], start=1):
         pages = item.get("page_numbers") or []
-        document.chunks.append(
-            Chunk(
-                chunk_index=index,
-                original_text=item["original_text"],
-                contextualized_text=item["contextualized_text"],
-                page_start=min(pages) if pages else None,
-                page_end=max(pages) if pages else None,
-                headings=item.get("headings"),
-                labels=item.get("labels"),
-            )
+        chunk = Chunk(
+            chunk_index=index,
+            original_text=item["original_text"],
+            contextualized_text=item["contextualized_text"],
+            page_start=min(pages) if pages else None,
+            page_end=max(pages) if pages else None,
+            headings=item.get("headings"),
+            labels=item.get("labels"),
         )
+        for image in item.get("images", []):
+            chunk.images.append(
+                Image(
+                    image_index=image["image_index"],
+                    page_number=image["page_number"],
+                    path=image["path"],
+                    caption=image.get("caption"),
+                    bbox=image["bbox"],
+                )
+            )
+        document.chunks.append(chunk)
     with sessions.begin() as session:
         session.add(document)
         session.flush()

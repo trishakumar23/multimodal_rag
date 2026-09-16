@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 
+from app.images import DEFAULT_MIN_AREA_RATIO, save_picture_regions
+
 
 def validate_pages(source: Path, start: int, end: int | None) -> tuple[int, int]:
     """Validate against physical, 1-based PDF pages before loading models."""
@@ -31,6 +33,7 @@ def extract_pdf(
     start: int = 1,
     end: int | None = None,
     ocr: bool = False,
+    min_image_area_ratio: float = DEFAULT_MIN_AREA_RATIO,
 ) -> Path:
     """Save one extraction run. Output must not exist, to prevent accidental overwrites."""
     total, end = validate_pages(source, start, end)
@@ -48,7 +51,7 @@ def extract_pdf(
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     settings.cache_dir = model_cache / "docling"
-    options = PdfPipelineOptions(do_ocr=ocr, do_table_structure=True)
+    options = PdfPipelineOptions(do_ocr=ocr, do_table_structure=True, generate_picture_images=True)
     options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU, num_threads=4)
     converter = DocumentConverter(
         allowed_formats=[InputFormat.PDF],
@@ -105,6 +108,9 @@ def extract_pdf(
         "warnings": warnings,
     }
     output.mkdir(parents=True, exist_ok=False)
+    manifest["saved_picture_count"] = save_picture_regions(
+        document, output, min_area_ratio=min_image_area_ratio
+    )
     document.save_as_json(output / "document.json")
     document.save_as_markdown(output / "document.md")
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
