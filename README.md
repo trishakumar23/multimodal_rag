@@ -293,6 +293,21 @@ local/                  Local outputs and model caches (ignored)
 
 Source PDFs, databases, model caches, virtual environments, `.env` files, and local experiments are excluded from Git.
 
+## Manual validation
+
+The complete ingestion pipeline was manually exercised with a **four-page
+excerpt (physical pages 8–11) of the supplied 2022 report**, rather than the
+full 674-page PDF. The local run extracted it with Docling, generated 23
+HybridChunker chunks, associated and persisted 19 images, and rendered the
+saved chunks and images in the HTML inspection view. The same PDF was ingested
+in Docker, where 25 chunks were persisted. Comparing the extraction JSONs
+showed that the difference originated in Docling's layout extraction across
+macOS ARM and Linux, rather than in HybridChunker.
+
+Automated tests use small generated fixtures and mock the expensive Docling
+request path. They verify orchestration and persistence without large PDFs or
+model downloads in CI; the real-PDF run above checks the complete pipeline.
+
 ## Known Limitations
 
 ### Environment-dependent layout extraction
