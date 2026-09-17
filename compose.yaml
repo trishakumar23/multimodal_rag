@@ -1,0 +1,36 @@
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "127.0.0.1:${RAG_PUBLISHED_PORT:-8000}:8000"
+    environment:
+      RAG_APP_NAME: "Multimodal RAG Ingestion"
+      RAG_MIN_IMAGE_AREA_RATIO: "${RAG_MIN_IMAGE_AREA_RATIO:-0.001}"
+    volumes:
+      - database:/data/db
+      - images:/data/images
+      - models:/app/local/models
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 60s
+
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      target: test
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  database:
+  images:
+  models:

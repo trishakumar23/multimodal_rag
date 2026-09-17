@@ -1,0 +1,11 @@
+# Allow only build inputs: never send PDFs, caches, credentials, or Git history.
+**
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!requirements-dev.txt
+!pyproject.toml
+!app/
+!app/**/*.py
+!tests/
+!tests/**/*.py
