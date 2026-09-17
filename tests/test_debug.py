@@ -135,6 +135,8 @@ def test_debug_document_route_loads_persisted_relationships_and_escapes_html(deb
     html = response.text
     assert "Chunk 1" in html
     assert "Pages 2–3" in html
+    assert "<strong>Page start:</strong> 2" in html
+    assert "<strong>Page end:</strong> 3" in html
     assert f'src="/debug/images/{image_id}"' in html
     assert "&lt;script&gt;report&lt;/script&gt;.pdf" in html
     assert "&lt;script&gt;alert(&#x27;text&#x27;)&lt;/script&gt;" in html
@@ -151,6 +153,34 @@ def test_debug_image_route_returns_stored_png(debug_client):
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
     assert response.content == image_path.read_bytes()
+
+
+def test_document_detail_returns_required_fields_from_database(debug_client):
+    client, document_id, _, _ = debug_client
+    response = client.get(f"/documents/{document_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": document_id,
+        "name": "<script>report</script>.pdf",
+        "year": 2025,
+        "number_of_pages": 3,
+        "debug_url": f"http://testserver/documents/{document_id}/debug",
+        "chunks": [
+            {
+                "id": response.json()["chunks"][0]["id"],
+                "document_id": document_id,
+                "chunk_index": 1,
+                "textual_content": "<script>alert('text')</script>",
+                "page_start": 2,
+                "page_end": 3,
+            }
+        ],
+    }
+
+    html_response = client.get(response.json()["debug_url"])
+    assert html_response.status_code == 200
+    assert html_response.headers["content-type"].startswith("text/html")
 
 
 @pytest.mark.parametrize(

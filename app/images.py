@@ -145,6 +145,8 @@ def attach_pictures(
                     "original_text": caption or "",
                     "contextualized_text": caption or f"Image on page {prov.page_no}",
                     "page_numbers": [prov.page_no],
+                    "page_start": prov.page_no,
+                    "page_end": prov.page_no,
                     "headings": [],
                     "labels": ["picture"],
                     "metadata": {"doc_items": [picture.model_dump(mode="json", exclude_none=True)]},

@@ -72,3 +72,23 @@ def test_failed_chunk_rolls_back_document(sessions):
     with sessions() as session:
         assert session.scalar(select(func.count()).select_from(Document)) == 0
         assert session.scalar(select(func.count()).select_from(Chunk)) == 0
+
+
+def test_explicit_page_range_is_accepted_for_saved_chunk_json(sessions):
+    document = persist_document(
+        sessions,
+        {"filename": "sample.pdf", "year": 2022, "total_pages": 10},
+        {
+            "chunks": [
+                {
+                    "original_text": "Text",
+                    "contextualized_text": "Text",
+                    "page_start": 8,
+                    "page_end": 9,
+                }
+            ]
+        },
+    )
+    with sessions() as session:
+        chunk = session.get(Chunk, document.chunks[0].id)
+        assert (chunk.document_id, chunk.page_start, chunk.page_end) == (document.id, 8, 9)

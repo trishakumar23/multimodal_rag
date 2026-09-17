@@ -52,6 +52,8 @@ def chunk_extraction(
                 "original_text": chunk.text,
                 "contextualized_token_count": tokenizer.count_tokens(contextualized_text),
                 "page_numbers": pages,
+                "page_start": pages[0] if pages else None,
+                "page_end": pages[-1] if pages else None,
                 "headings": chunk.meta.headings or [],
                 "labels": labels,
                 "metadata": metadata,

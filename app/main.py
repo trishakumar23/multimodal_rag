@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Annotated
 
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
@@ -44,6 +44,25 @@ class DocumentResponse(BaseModel):
     year: int
     total_pages: int
     chunk_count: int
+    debug_url: str
+
+
+class ChunkDetail(BaseModel):
+    id: int
+    document_id: int
+    chunk_index: int
+    textual_content: str
+    page_start: int | None
+    page_end: int | None
+
+
+class DocumentDetail(BaseModel):
+    id: int
+    name: str
+    year: int
+    number_of_pages: int
+    debug_url: str
+    chunks: list[ChunkDetail]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -73,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.post("/documents", response_model=DocumentResponse, tags=["documents"])
     def ingest_document(
+        request: Request,
         file: Annotated[UploadFile, File()],
         year: Annotated[int, Form()],
     ) -> DocumentResponse:
@@ -119,6 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     year=document.year,
                     total_pages=document.total_pages,
                     chunk_count=len(document.chunks),
+                    debug_url=str(request.url_for("debug_document", document_id=document.id)),
                 )
         except HTTPException:
             raise
@@ -131,9 +152,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 shutil.rmtree(image_dir)
 
     @application.get(
+        "/documents/{document_id}",
+        response_model=DocumentDetail,
+        tags=["documents"],
+        summary="Get document data (JSON)",
+        description="Returns saved document and chunk data. Open debug_url for the HTML page.",
+    )
+    def get_document(document_id: int, request: Request) -> DocumentDetail:
+        """Return a persisted document and its ordered chunks with explicit page ranges."""
+        document = get_document_for_debug(application.state.sessions, document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        return DocumentDetail(
+            id=document.id,
+            name=document.filename,
+            year=document.year,
+            number_of_pages=document.total_pages,
+            debug_url=str(request.url_for("debug_document", document_id=document.id)),
+            chunks=[
+                ChunkDetail(
+                    id=chunk.id,
+                    document_id=chunk.document_id,
+                    chunk_index=chunk.chunk_index,
+                    textual_content=chunk.original_text,
+                    page_start=chunk.page_start,
+                    page_end=chunk.page_end,
+                )
+                for chunk in sorted(document.chunks, key=lambda item: item.chunk_index)
+            ],
+        )
+
+    @application.get(
         "/documents/{document_id}/debug",
         response_class=HTMLResponse,
-        tags=["debug"],
+        tags=["documents"],
+        summary="View document and images (HTML)",
+        description=(
+            "Enter the document ID and execute, then open the Request URL in your browser "
+            "to view the HTML page. The URL must end in /debug."
+        ),
     )
     def debug_document(document_id: int) -> HTMLResponse:
         """Render persisted chunks and images for human inspection."""

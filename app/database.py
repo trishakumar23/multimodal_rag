@@ -111,12 +111,14 @@ def persist_document(
     )
     for index, item in enumerate(chunk_output["chunks"], start=1):
         pages = item.get("page_numbers") or []
+        page_start = min(pages) if pages else item.get("page_start")
+        page_end = max(pages) if pages else item.get("page_end")
         chunk = Chunk(
             chunk_index=index,
             original_text=item["original_text"],
             contextualized_text=item["contextualized_text"],
-            page_start=min(pages) if pages else None,
-            page_end=max(pages) if pages else None,
+            page_start=page_start,
+            page_end=page_end,
             headings=item.get("headings"),
             labels=item.get("labels"),
         )

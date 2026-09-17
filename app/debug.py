@@ -69,6 +69,12 @@ def render_document_html(document: Document) -> str:
                 </div>
 
                 <div class="metadata">
+                    <strong>Document ID:</strong> {document.id}
+                    <br>
+                    <strong>Page start:</strong> {_page_number(chunk.page_start)}
+                    <br>
+                    <strong>Page end:</strong> {_page_number(chunk.page_end)}
+                    <br>
                     <strong>Headings:</strong> {escape(headings)}
                     <br>
                     <strong>Labels:</strong> {escape(labels)}
@@ -203,6 +209,10 @@ def _page_label(page_start: int | None, page_end: int | None) -> str:
         return f"Page {page_start}"
 
     return f"Pages {page_start}–{page_end}"
+
+
+def _page_number(page: int | None) -> str:
+    return str(page) if page is not None else "Unknown"
 
 
 def get_image_path(sessions: sessionmaker, image_id: int) -> Path | None:

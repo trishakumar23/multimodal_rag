@@ -82,6 +82,7 @@ def test_upload_runs_full_pipeline_and_persists(tmp_path, monkeypatch):
         "year": 2025,
         "total_pages": 3,
         "chunk_count": 1,
+        "debug_url": "http://testserver/documents/1/debug",
     }
     assert calls == ["extract", "chunk", "persist"]
     assert not temporary_source[0].exists()
