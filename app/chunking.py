@@ -69,7 +69,7 @@ def chunk_extraction(
         "tokenizer": tokenizer_name,
         "max_tokens": max_tokens,
         "chunk_count": len(chunks),
-        "chunks_over_max_tokens": sum(
+        "contextualized_chunks_over_max_tokens": sum(
             chunk["contextualized_token_count"] > max_tokens for chunk in chunks
         ),
         "chunks": chunks,

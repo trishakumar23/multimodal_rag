@@ -4,9 +4,10 @@ A take-home project for ingesting TotalEnergies annual reports into a relational
 database, preserving text, tables, images, and source page references.
 
 **Current status:** the FastAPI application accepts complete PDF uploads and
-persists text chunks with Docling, HybridChunker, and SQLite. Standalone extraction
-and chunking commands are also available. Image export, the chunk inspection
-interface, and Docker packaging are subsequent milestones.
+persists text chunks and associated images with Docling, HybridChunker, and SQLite.
+A browser debug view displays saved chunks and images. Standalone extraction,
+chunking, and image-association commands are also available. Docker packaging
+is a subsequent milestone.
 
 ## Setup
 
@@ -54,7 +55,18 @@ curl -F 'file=@data/raw/report_2025.pdf' -F 'year=2025' \
 document and chunks before replying. Large reports may take time. You can also
 use `/docs` to send the request interactively. The PDF and intermediate files
 are removed from the temporary work directory after the request; the database
-record remains. The upload must have a `.pdf` filename and PDF file header.
+record and associated image files remain. The upload must have a `.pdf` filename
+and PDF file header. Each upload creates a new document record.
+
+To upload through the browser, open <http://127.0.0.1:8000/docs>, expand
+`POST /documents`, click **Try it out**, choose a PDF, enter its year, and click
+**Execute**. Browser and terminal uploads use the same ingestion pipeline.
+
+After the response, open `http://127.0.0.1:8000/documents/{document_id}/debug`,
+replacing `{document_id}` with the returned ID. This inspection page displays
+chunk text, headings, labels, page references, and associated images; it does not
+contain an upload form. Images are served through `/debug/images/{image_id}`.
+Unknown document/image IDs and missing image files return 404.
 
 For development with automatic reload:
 
@@ -76,6 +88,8 @@ copy `.env.example` to `.env` or set environment variables:
 | `RAG_HOST` | `127.0.0.1` | Server bind address |
 | `RAG_PORT` | `8000` | Server port, from 1 to 65535 |
 | `RAG_DATABASE_URL` | `sqlite:///local/multimodal_rag.db` | SQLite database location |
+| `RAG_IMAGE_DIR` | `local/images` | Durable image storage for uploads |
+| `RAG_MIN_IMAGE_AREA_RATIO` | `0.001` | Minimum picture area relative to its page |
 
 Environment variables take precedence over `.env`. Do not commit `.env` or
 credentials.
@@ -103,7 +117,8 @@ The output directory must be new. It contains:
   page range, parser version, counts, and warnings.
 
 This command extracts only; it does not create chunks or database records.
-Detected picture locations are retained, but image files are not exported yet.
+Detected picture locations are retained, and eligible pictures are exported as
+PNG files under `images/` in the extraction directory.
 Keep the JSON and manifest together for later processing.
 
 Docling runs locally on CPU with four threads. Its models download on first use
@@ -118,8 +133,8 @@ may be missed. The manifest flags pages with fewer than 50 extracted characters.
 Table extraction is not infallible: in the tested balance sheet, Docling splits
 the content into two tables and marks the second table's first data row as a
 header. The output deliberately retains the original structure and records a
-warning instead of guessing replacements. Shared year/unit context must be
-retained when we implement chunking. Compare financial values against the PDF.
+warning instead of guessing replacements. Check that chunked tables retain
+shared year/unit context, and compare financial values against the PDF.
 
 ## Chunk a saved extraction
 
@@ -147,10 +162,25 @@ python -m app.chunking local/extractions/my-sample \
   --tokenizer MODEL_ID --max-tokens 480
 ```
 
-The JSON includes each contextualized token count and `chunks_over_max_tokens`.
+The JSON includes each contextualized token count and `contextualized_chunks_over_max_tokens`.
 Docling can exceed the requested target by a few tokens after adding context;
 the count makes that visible so the setting can leave room for the chosen model.
 Existing output files are never overwritten.
+
+## Associate exported images with chunks
+
+For standalone processing, attach images before persisting the document:
+
+```sh
+python -m app.images local/extractions/my-sample local/chunks/my-run.json \
+  --output local/chunks/my-multimodal-run.json \
+  --image-dir local/images/my-run
+python -m app.database local/extractions/my-sample local/chunks/my-multimodal-run.json
+```
+
+Choose new output JSON and image-directory paths. The association step copies
+exported images to durable storage and adds image metadata to the chunk JSON.
+The upload endpoint performs these steps automatically.
 
 ## Save a document and its chunks
 
@@ -165,15 +195,18 @@ another SQLite file, for example `sqlite:///local/test-run.db`. Run commands fro
 the repository root so relative paths resolve as shown. Each invocation inserts
 a new document; running it again creates another record.
 
-The schema has two tables:
+The schema has three tables:
 
 - `documents`: ID, filename, report year, total **physical** PDF pages, optional
   SHA-256 source hash, and creation timestamp.
 - `chunks`: ID, document foreign key, 1-based order index, original text,
   contextualized text, nullable first/last page, and JSON headings/labels.
+- `images`: ID, chunk foreign key, image index, page number, stored file path,
+  optional caption, and bounding box.
 
 The index comes from chunk order, not the display ID. Missing page numbers stay
-null. Deleting a document through the ORM deletes its chunks. SQLite foreign keys
+null. Deleting a document through the ORM deletes its chunks and image records
+(image files on disk are not deleted by this cascade). SQLite foreign keys
 are enabled so database-level cascading is also enforced. If any chunk fails to
 save, the document and all its chunks are rolled back together.
 
@@ -192,8 +225,8 @@ python -m ruff format --check app tests
 ```
 
 Tests cover the API, environment settings, extraction page-range validation,
-overwrite prevention, SQLite persistence and rollback, and the upload request
-flow. They need no source PDFs, model downloads, or network access; a tiny PDF is
+overwrite prevention, SQLite persistence and rollback, image association, the
+upload request flow, and debug rendering/routes (including escaping and 404s). They need no source PDFs, model downloads, or network access; a tiny PDF is
 generated for input-validation tests. These checks do not measure extraction
 accuracy; inspect the real sample outputs separately.
 
@@ -206,10 +239,15 @@ app/
   extraction.py         # Docling extraction function and command-line entry point
   chunking.py           # HybridChunker command and inspectable JSON output
   database.py           # SQLite schema, sessions, and transactional persistence
+  images.py             # Image export helpers and chunk association
+  debug.py              # Persisted document loading and HTML inspection
 tests/
   test_app.py            # API and configuration checks
   test_extraction.py     # PDF range and output safeguards
   test_ingestion.py      # Upload validation and pipeline orchestration
+  test_database.py       # Persistence and rollback
+  test_images.py         # Image filtering and association
+  test_debug.py          # HTML rendering, escaping, and debug routes
 .env.example            # Optional configuration template
 pyproject.toml          # Test and lint configuration
 requirements.txt        # Pinned runtime dependencies

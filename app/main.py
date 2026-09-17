@@ -12,6 +12,7 @@ from typing import Annotated
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 from app.chunking import chunk_extraction
@@ -21,6 +22,11 @@ from app.database import (
     create_session_factory,
     initialize_database,
     persist_document,
+)
+from app.debug import (
+    get_document_for_debug,
+    get_image_path,
+    render_document_html,
 )
 from app.extraction import extract_pdf
 from app.images import associate_images
@@ -123,6 +129,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             file.file.close()
             if not committed and image_dir.exists():
                 shutil.rmtree(image_dir)
+
+    @application.get(
+        "/documents/{document_id}/debug",
+        response_class=HTMLResponse,
+        tags=["debug"],
+    )
+    def debug_document(document_id: int) -> HTMLResponse:
+        """Render persisted chunks and images for human inspection."""
+        document = get_document_for_debug(
+            application.state.sessions,
+            document_id,
+        )
+
+        if document is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Document not found",
+            )
+
+        return HTMLResponse(content=render_document_html(document))
+
+    @application.get(
+        "/debug/images/{image_id}",
+        response_class=FileResponse,
+        tags=["debug"],
+    )
+    def debug_image(image_id: int) -> FileResponse:
+        """Serve one persisted image used by the debug HTML."""
+        image_path = get_image_path(
+            application.state.sessions,
+            image_id,
+        )
+
+        if image_path is None or not image_path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail="Image not found",
+            )
+
+        return FileResponse(image_path)
 
     return application
 
