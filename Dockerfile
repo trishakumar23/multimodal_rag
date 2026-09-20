@@ -15,9 +15,16 @@ WORKDIR /app
 
 # Docling's image-processing dependencies; no compiler or development tools.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        fontconfig \
+        fonts-liberation \
+        fonts-dejavu-core \
+        fonts-noto-core \
+    && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
-
+    
 COPY requirements.txt ./
 # Install CPU wheels first to avoid unnecessary CUDA libraries on Linux.
 RUN --mount=type=cache,target=/root/.cache/pip \
