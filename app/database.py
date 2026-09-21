@@ -15,10 +15,14 @@ from app.config import Settings
 
 
 class Base(DeclarativeBase):
+    """Common SQLAlchemy base that collects the table definitions below."""
+
     pass
 
 
 class Document(Base):
+    """One ingested PDF and its ordered text chunks."""
+
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -34,6 +38,8 @@ class Document(Base):
 
 
 class Chunk(Base):
+    """One text segment, its page references, and its associated images."""
+
     __tablename__ = "chunks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -55,6 +61,8 @@ class Chunk(Base):
 
 
 class Image(Base):
+    """An image's file path and PDF location; the image bytes stay on disk."""
+
     __tablename__ = "images"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -82,6 +90,7 @@ def create_database_engine(settings: Settings | None = None) -> Engine:
 
     @event.listens_for(engine, "connect")
     def enable_foreign_keys(dbapi_connection: Any, _: Any) -> None:
+        """Enable SQLite relationship checks and cascades for each new connection."""
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
@@ -90,10 +99,12 @@ def create_database_engine(settings: Settings | None = None) -> Engine:
 
 
 def initialize_database(engine: Engine) -> None:
+    """Create missing tables from the models above; this does not migrate existing tables."""
     Base.metadata.create_all(engine)
 
 
 def create_session_factory(engine: Engine) -> sessionmaker:
+    """Create database sessions whose loaded values remain readable after a commit."""
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
@@ -102,7 +113,7 @@ def persist_document(
     manifest: Mapping[str, Any],
     chunk_output: Mapping[str, Any],
 ) -> Document:
-    """Commit a document and its ordered chunks together, or roll back both."""
+    """Save a document, chunks, and image records in one transaction; return the document."""
     document = Document(
         filename=manifest["filename"],
         year=manifest["year"],
@@ -110,6 +121,7 @@ def persist_document(
         source_sha256=manifest.get("source_sha256"),
     )
     for index, item in enumerate(chunk_output["chunks"], start=1):
+        # Prefer explicit source pages; older chunk files may only store a start/end range.
         pages = item.get("page_numbers") or []
         page_start = min(pages) if pages else item.get("page_start")
         page_end = max(pages) if pages else item.get("page_end")
@@ -133,6 +145,7 @@ def persist_document(
                 )
             )
         document.chunks.append(chunk)
+    # SQLAlchemy saves the related chunks/images too; any failure rolls back the whole write.
     with sessions.begin() as session:
         session.add(document)
         session.flush()
@@ -140,6 +153,7 @@ def persist_document(
 
 
 def main() -> None:
+    """CLI entry point: persist existing extraction/chunk files with python -m app.database."""
     parser = argparse.ArgumentParser(description="Save an existing extraction and its chunks")
     parser.add_argument("extraction_dir", type=Path, help="Folder with manifest.json")
     parser.add_argument("chunks_json", type=Path, help="Output from app.chunking")

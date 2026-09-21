@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+# Tune these defaults to change token counting and the target chunk size.
 DEFAULT_TOKENIZER = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_MAX_TOKENS = 480
 
@@ -16,7 +17,7 @@ def chunk_extraction(
     tokenizer_name: str = DEFAULT_TOKENIZER,
     max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> int:
-    """Write inspectable chunks from extraction JSON, preserving Docling metadata."""
+    """Read an extraction folder, write chunks with source metadata, and return their count."""
     if max_tokens < 1:
         raise ValueError("max_tokens must be positive")
     if output.exists():
@@ -41,9 +42,11 @@ def chunk_extraction(
     chunks = []
     for index, chunk in enumerate(chunker.chunk(document), start=1):
         metadata = chunk.meta.model_dump(mode="json", by_alias=True, exclude_none=True)
+        # Keep page locations and document references for later image association/debugging.
         doc_items = chunk.meta.doc_items
         pages = sorted({prov.page_no for item in doc_items for prov in item.prov})
         labels = list(dict.fromkeys(str(item.label.value) for item in doc_items))
+        # Add heading context for retrieval while retaining the original text separately.
         contextualized_text = chunker.contextualize(chunk)
         chunks.append(
             {
@@ -82,6 +85,7 @@ def chunk_extraction(
 
 
 def main() -> None:
+    """CLI entry point: chunk a saved extraction with python -m app.chunking."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("extraction_dir", type=Path, help="Folder containing document.json")
     parser.add_argument("--output", type=Path, required=True, help="New JSON output file")

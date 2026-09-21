@@ -14,7 +14,7 @@ from app.images import DEFAULT_MIN_AREA_RATIO, save_picture_regions
 
 
 def validate_pages(source: Path, start: int, end: int | None) -> tuple[int, int]:
-    """Validate against physical, 1-based PDF pages before loading models."""
+    """Validate physical, 1-based page numbers; return the PDF's page count and resolved end."""
     if not source.is_file():
         raise ValueError(f"PDF does not exist: {source}")
     with pdfium.PdfDocument(source) as pdf:
@@ -35,7 +35,7 @@ def extract_pdf(
     ocr: bool = False,
     min_image_area_ratio: float = DEFAULT_MIN_AREA_RATIO,
 ) -> Path:
-    """Save one extraction run. Output must not exist, to prevent accidental overwrites."""
+    """Save Docling JSON, Markdown, picture crops, and a manifest in a new output folder."""
     total, end = validate_pages(source, start, end)
     if output.exists():
         raise ValueError(f"Output already exists; choose a new directory: {output}")
@@ -51,6 +51,7 @@ def extract_pdf(
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     settings.cache_dir = model_cache / "docling"
+    # Parser/model settings: OCR is opt-in; picture rendering supplies the crops saved below.
     options = PdfPipelineOptions(do_ocr=ocr, do_table_structure=True, generate_picture_images=True)
     options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU, num_threads=4)
     converter = DocumentConverter(
@@ -66,6 +67,7 @@ def extract_pdf(
     if set(document.pages) != expected_pages:
         raise RuntimeError("Extracted page numbers do not match the requested PDF pages")
 
+    # Record quality caveats in the manifest so later stages can inspect them.
     warnings = []
     if not ocr:
         warnings.append("OCR disabled: visible text absent from the PDF text layer may be missing.")
@@ -90,6 +92,7 @@ def extract_pdf(
             "a split table may lack year headers or mark its first data row as a header. "
             "Keep same-page headings and preceding tables as context."
         )
+    # Identify the source by file content, independent of its filename or upload location.
     with source.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     manifest = {
@@ -107,6 +110,7 @@ def extract_pdf(
         "picture_count": len(document.pictures),
         "warnings": warnings,
     }
+    # Export crops first; save_picture_regions removes image bytes from the document JSON.
     output.mkdir(parents=True, exist_ok=False)
     manifest["saved_picture_count"] = save_picture_regions(
         document, output, min_area_ratio=min_image_area_ratio
@@ -118,6 +122,7 @@ def extract_pdf(
 
 
 def main() -> None:
+    """CLI entry point: extract a PDF or page range with python -m app.extraction."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pdf", type=Path)
     parser.add_argument(

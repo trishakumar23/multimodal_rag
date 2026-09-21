@@ -34,6 +34,7 @@ from app.images import associate_images
 logger = logging.getLogger(__name__)
 
 
+# Response models define the JSON fields returned by the routes below.
 class HealthResponse(BaseModel):
     status: str
 
@@ -66,10 +67,12 @@ class DocumentDetail(BaseModel):
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    """Build the API and its routes; callers can supply settings for isolated tests or storage."""
     settings = settings if settings is not None else Settings()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        """Prepare database access at startup and release the engine at shutdown."""
         engine = create_database_engine(settings)
         initialize_database(engine)
         application.state.sessions = create_session_factory(engine)
@@ -96,6 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         file: Annotated[UploadFile, File()],
         year: Annotated[int, Form()],
     ) -> DocumentResponse:
+        """Validate an upload, extract and chunk it, attach pictures, and save the document."""
         filename = Path((file.filename or "").replace("\\", "/")).name
         if not filename or Path(filename).suffix.lower() != ".pdf":
             raise HTTPException(status_code=400, detail="Upload a PDF file with a .pdf filename")
@@ -105,11 +109,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if file.file.read(5) != b"%PDF-":
                 raise HTTPException(status_code=400, detail="The uploaded file is not a PDF")
             file.file.seek(0)
+            # Intermediate PDF/JSON files are removed automatically after this request.
             with tempfile.TemporaryDirectory(prefix="rag-ingest-") as work:
                 workdir = Path(work)
                 source = workdir / filename
                 with source.open("wb") as destination:
                     shutil.copyfileobj(file.file, destination)
+                # Pipeline: PDF → structured extraction → text chunks → associated images.
                 extraction_dir = extract_pdf(
                     source,
                     year,
@@ -121,6 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 manifest_path = extraction_dir / "manifest.json"
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 if manifest.get("saved_picture_count", 0):
+                    # Move crops into durable storage before the temporary folder is deleted.
                     multimodal_path = workdir / "multimodal.json"
                     associate_images(
                         extraction_dir,
@@ -132,6 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     chunks_path = multimodal_path
                 chunks = json.loads(chunks_path.read_text(encoding="utf-8"))
                 document = persist_document(application.state.sessions, manifest, chunks)
+                # Keep the image files only once their database records have been committed.
                 committed = True
                 return DocumentResponse(
                     document_id=document.id,
@@ -232,6 +240,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 def main() -> None:
+    """Start the HTTP server with configured host/port via python -m app.main."""
     settings = Settings()
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
 

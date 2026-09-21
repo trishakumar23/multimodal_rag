@@ -12,6 +12,7 @@ from app.database import Chunk, Document
 def get_document_for_debug(sessions: sessionmaker, document_id: int) -> Document | None:
     """Load a document together with its chunks and associated images."""
     with sessions() as session:
+        # Load relationships now so the HTML/API can read them after this session closes.
         statement = (
             select(Document)
             .where(Document.id == document_id)
@@ -23,6 +24,7 @@ def get_document_for_debug(sessions: sessionmaker, document_id: int) -> Document
 def render_document_html(document: Document) -> str:
     """Render one persisted document as a simple human-readable HTML page."""
 
+    # Build one section per chunk; escape PDF-derived text before inserting it into HTML.
     chunk_sections = []
 
     for chunk in sorted(document.chunks, key=lambda item: item.chunk_index):
@@ -91,6 +93,7 @@ def render_document_html(document: Document) -> str:
             """
         )
 
+    # Page layout and styling live in this template; chunk contents are assembled above.
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -202,6 +205,7 @@ def render_document_html(document: Document) -> str:
 
 
 def _page_label(page_start: int | None, page_end: int | None) -> str:
+    """Format a single page, page range, or missing-page label for the chunk header."""
     if page_start is None:
         return "Page unknown"
 
@@ -212,6 +216,7 @@ def _page_label(page_start: int | None, page_end: int | None) -> str:
 
 
 def _page_number(page: int | None) -> str:
+    """Display a page number or a readable placeholder when it is missing."""
     return str(page) if page is not None else "Unknown"
 
 

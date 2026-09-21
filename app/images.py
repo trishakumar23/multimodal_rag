@@ -13,10 +13,12 @@ DEFAULT_MIN_AREA_RATIO = 0.001  # 0.1% of the page; only obvious tiny artifacts
 
 
 def picture_filename(index: int) -> str:
+    """Use the original picture index so exported crops and chunk references stay aligned."""
     return f"picture-{index:05d}.png"
 
 
 def relative_area(bbox: Any, page_size: Any) -> float:
+    """Return the fraction of a page covered by a picture's bounding box."""
     return abs((bbox.r - bbox.l) * (bbox.t - bbox.b)) / (page_size.width * page_size.height)
 
 
@@ -47,6 +49,7 @@ def save_picture_regions(
 
 
 def _box(bbox: dict[str, Any], page_height: float) -> tuple[float, float, float, float]:
+    """Normalize PDF coordinates to (left, top, right, bottom), measured from the top left."""
     left, top, right, bottom = bbox["l"], bbox["t"], bbox["r"], bbox["b"]
     if bbox.get("coord_origin", "TOPLEFT").upper() == "BOTTOMLEFT":
         top, bottom = page_height - top, page_height - bottom
@@ -54,12 +57,14 @@ def _box(bbox: dict[str, Any], page_height: float) -> tuple[float, float, float,
 
 
 def _distance(first: tuple[float, ...], second: tuple[float, ...]) -> float:
+    """Measure the shortest gap between two boxes; touching or overlapping boxes have no gap."""
     dx = max(first[0] - second[2], second[0] - first[2], 0)
     dy = max(first[1] - second[3], second[1] - first[3], 0)
     return math.hypot(dx, dy)
 
 
 def _captions(document: DoclingDocument, picture: Any) -> tuple[set[str], str | None]:
+    """Resolve usable caption references and combine their text for image matching."""
     references = set()
     texts = []
     for reference in picture.captions:
@@ -80,7 +85,9 @@ def _chunk_for_picture(
     caption_refs: set[str],
     caption_text: str | None,
 ) -> tuple[int | None, str]:
+    """Choose a chunk by caption, then page proximity; return its index and matching method."""
     page = picture.prov[0].page_no
+    # An explicit caption link is stronger evidence than physical proximity on the page.
     for index, chunk in enumerate(chunks):
         refs = {item.get("self_ref") for item in chunk.get("metadata", {}).get("doc_items", [])}
         if caption_refs & refs:
@@ -90,6 +97,7 @@ def _chunk_for_picture(
             if caption_text.casefold() in chunk.get("original_text", "").casefold():
                 return index, "caption_text"
 
+    # Without a caption match, look for the closest text box on the picture's page.
     same_page = [
         (index, chunk)
         for index, chunk in enumerate(chunks)
@@ -119,7 +127,7 @@ def attach_pictures(
     *,
     min_area_ratio: float = DEFAULT_MIN_AREA_RATIO,
 ) -> int:
-    """Attach each retained picture to one chunk; mutate and return the chunk output."""
+    """Add image lists to chunk_output in place and return the number of attached pictures."""
     if not 0 <= min_area_ratio < 1:
         raise ValueError("min_area_ratio must be between 0 and 1")
     chunks = chunk_output["chunks"]
@@ -138,6 +146,7 @@ def attach_pictures(
         caption_refs, caption = _captions(document, picture)
         target, method = _chunk_for_picture(document, picture, chunks, caption_refs, caption)
         if target is None:
+            # Preserve pictures even when their page has no matching text chunk.
             target = len(chunks)
             chunks.append(
                 {
@@ -194,6 +203,7 @@ def associate_images(
 
 
 def main() -> None:
+    """CLI entry point: associate saved crops with chunks using python -m app.images."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("extraction_dir", type=Path)
     parser.add_argument("chunk_json", type=Path)

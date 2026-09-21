@@ -8,19 +8,36 @@ The project currently focuses on **ingestion and inspection**. Embeddings, vecto
 
 ## Pipeline
 
-```text
-PDF
- ↓
-Docling extraction
- ↓
-HybridChunker
- ↓
-Image association
- ↓
-SQLite + image files
- ↓
-HTML inspection interface
+```mermaid
+flowchart TD
+    PDF["PDF + report year<br/>POST /documents"]
+    DOCLING["Docling document understanding<br/>Layout and table extraction · OCR off by default"]
+    DOC["Structured DoclingDocument<br/>Text, headings, tables, pictures<br/>Page numbers and bounding boxes"]
+
+    PDF --> DOCLING --> DOC
+    DOC --> TEXT["Text and tables"]
+    DOC --> PICTURES["Picture regions"]
+
+    TEXT --> CHUNKER["HybridChunker<br/>Document structure + 480-token target"]
+    CHUNKER --> CHUNKS["Text chunks<br/>Original and contextualized text<br/>Headings, labels and page references"]
+    PICTURES --> CROPS["PNG crops + picture metadata<br/>Filter tiny regions by page-area ratio"]
+
+    CHUNKS --> ASSOC["Image association<br/>Caption reference → caption text<br/>→ nearest box on the same page<br/>→ same-page fallback → image-only fallback"]
+    CROPS --> ASSOC
+    ASSOC --> MULTIMODAL["Multimodal chunks<br/>Text with associated image references<br/>Image-only chunks when no text chunk matches"]
+
+    MULTIMODAL --> DB[("SQLite<br/>documents · chunks · images")]
+    CROPS --> FILES["Persistent PNG files"]
+    DB --> INSPECT["HTML inspection interface<br/>Chunks, source pages and images"]
+    FILES --> INSPECT
+    DB --> JSON["Document and chunk JSON<br/>GET /documents/{document_id}"]
 ```
+
+The two branches show how text and pictures are processed before association.
+Chunks without matching pictures remain text-only. SQLite stores document and
+chunk data plus image metadata and file paths; PNG bytes live separately on disk.
+During API ingestion, the uploaded PDF and intermediate extraction/chunk files
+are temporary and are removed after the request.
 
 The pipeline preserves document structure and provenance so the resulting chunks can later be used as input to a multimodal retrieval system.
 
